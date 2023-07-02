@@ -35,6 +35,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type decoder struct {
@@ -216,6 +218,9 @@ func (d *decoder) readDocTo(out reflect.Value) {
 		case typeDocElem:
 			origout.Set(d.readDocElems(outt))
 			return
+		case typePrimDocElem:
+			origout.Set(d.readDocElems(outt))
+			return
 		case typeRawDocElem:
 			origout.Set(d.readRawDocElems(outt))
 			return
@@ -380,7 +385,17 @@ func (d *decoder) readDocElems(typ reflect.Type) reflect.Value {
 		}
 	})
 	slicev := reflect.New(typ).Elem()
-	slicev.Set(reflect.ValueOf(slice))
+	if typ == typePrimDoc {
+		ps := make(primitive.D, 0, len(slice))
+		for _, s := range slice {
+			ps = append(ps, primitive.E{Key: s.Name, Value: s.Value})
+		}
+
+		slicev.Set(reflect.ValueOf(ps))
+	} else {
+		slicev.Set(reflect.ValueOf(slice))
+	}
+
 	d.docType = docType
 	return slicev
 }
@@ -556,6 +571,12 @@ func (d *decoder) readElemTo(out reflect.Value, kind byte) (good bool) {
 
 	if outt == typeRaw {
 		out.Set(reflect.ValueOf(Raw{kind, d.in[start:d.i]}))
+		return true
+	}
+
+	if outt == typePrimObjectId {
+		inv := reflect.ValueOf(in)
+		reflect.Copy(out, inv)
 		return true
 	}
 

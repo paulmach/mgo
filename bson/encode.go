@@ -35,6 +35,8 @@ import (
 	"reflect"
 	"strconv"
 	"time"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // --------------------------------------------------------------------------
@@ -43,11 +45,14 @@ import (
 var (
 	typeBinary         = reflect.TypeOf(Binary{})
 	typeObjectId       = reflect.TypeOf(ObjectId(""))
+	typePrimObjectId   = reflect.TypeOf(primitive.ObjectID{})
 	typeDBPointer      = reflect.TypeOf(DBPointer{"", ObjectId("")})
 	typeSymbol         = reflect.TypeOf(Symbol(""))
 	typeMongoTimestamp = reflect.TypeOf(MongoTimestamp(0))
 	typeOrderKey       = reflect.TypeOf(MinKey)
 	typeDocElem        = reflect.TypeOf(DocElem{})
+	typePrimDoc        = reflect.TypeOf(primitive.D{})
+	typePrimDocElem    = reflect.TypeOf(primitive.E{})
 	typeRawDocElem     = reflect.TypeOf(RawDocElem{})
 	typeRaw            = reflect.TypeOf(Raw{})
 	typeURL            = reflect.TypeOf(url.URL{})
@@ -223,6 +228,13 @@ func (e *encoder) addSlice(v reflect.Value) {
 		}
 		return
 	}
+	if et == typePrimDocElem {
+		for i := 0; i < l; i++ {
+			elem := v.Index(i).Interface().(primitive.E)
+			e.addElem(elem.Key, reflect.ValueOf(elem.Value), false)
+		}
+		return
+	}
 	if et == typeRawDocElem {
 		for i := 0; i < l; i++ {
 			elem := v.Index(i).Interface().(RawDocElem)
@@ -365,23 +377,29 @@ func (e *encoder) addElem(name string, v reflect.Value, minSize bool) {
 		}
 
 	case reflect.Array:
-		et := v.Type().Elem()
-		if et.Kind() == reflect.Uint8 {
-			e.addElemName(0x05, name)
-			if v.CanAddr() {
-				e.addBinary(0x00, v.Slice(0, v.Len()).Interface().([]byte))
-			} else {
-				n := v.Len()
-				e.addInt32(int32(n))
-				e.addBytes(0x00)
-				for i := 0; i < n; i++ {
-					el := v.Index(i)
-					e.addBytes(byte(el.Uint()))
-				}
-			}
+		if v.Type() == typePrimObjectId {
+			e.addElemName(0x07, name)
+			a := v.Interface().(primitive.ObjectID)
+			e.addBytes(a[:]...)
 		} else {
-			e.addElemName(0x04, name)
-			e.addDoc(v)
+			et := v.Type().Elem()
+			if et.Kind() == reflect.Uint8 {
+				e.addElemName(0x05, name)
+				if v.CanAddr() {
+					e.addBinary(0x00, v.Slice(0, v.Len()).Interface().([]byte))
+				} else {
+					n := v.Len()
+					e.addInt32(int32(n))
+					e.addBytes(0x00)
+					for i := 0; i < n; i++ {
+						el := v.Index(i)
+						e.addBytes(byte(el.Uint()))
+					}
+				}
+			} else {
+				e.addElemName(0x04, name)
+				e.addDoc(v)
+			}
 		}
 
 	case reflect.Struct:
